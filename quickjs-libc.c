@@ -454,14 +454,6 @@ typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
                                         const char *module_name);
 
 
-#if 0
-static JSModuleDef *js_module_loader_so(JSContext *ctx,
-                                        const char *module_name)
-{
-    JS_ThrowReferenceError(ctx, "shared library modules are not supported yet");
-    return NULL;
-}
-#else
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
 {
@@ -510,7 +502,6 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
     }
     return m;
 }
-#endif /* !_WIN32 */
 
 int js_module_set_import_meta(JSContext *ctx, JSValueConst func_val,
                               JS_BOOL use_realpath, JS_BOOL is_main)

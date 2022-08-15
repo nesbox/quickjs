@@ -28,7 +28,37 @@
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
+
+#ifdef _MSC_VER
+#include <WinSock2.h>
+
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+
+ // From: https://stackoverflow.com/a/26085827
+static int gettimeofday(struct timeval* tp, struct timezone* tzp)
+{
+    static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+
+    SYSTEMTIME  system_time;
+    FILETIME    file_time;
+    uint64_t    time;
+
+    GetSystemTime(&system_time);
+    SystemTimeToFileTime(&system_time, &file_time);
+    time = ((uint64_t)file_time.dwLowDateTime);
+    time += ((uint64_t)file_time.dwHighDateTime) << 32;
+
+    tp->tv_sec = (long)((time - EPOCH) / 10000000L);
+    tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
+
+    return 0;
+}
+
+#else
 #include <sys/time.h>
+#endif
+
 #include <time.h>
 #include <fenv.h>
 #include <math.h>
@@ -50,7 +80,7 @@
 
 #define OPTIMIZE         1
 #define SHORT_OPCODES    1
-#if defined(EMSCRIPTEN)
+#if defined(EMSCRIPTEN) || defined(_MSC_VER)
 #define DIRECT_DISPATCH  0
 #else
 #define DIRECT_DISPATCH  1
@@ -69,11 +99,11 @@
 
 /* define to include Atomics.* operations which depend on the OS
    threads */
-#if !defined(EMSCRIPTEN)
+#if !defined(EMSCRIPTEN) && !defined(_MSC_VER)
 #define CONFIG_ATOMICS
 #endif
 
-#if !defined(EMSCRIPTEN)
+#if !defined(EMSCRIPTEN) && !defined(_MSC_VER)
 /* enable stack limitation */
 #define CONFIG_STACK_CHECK
 #endif
@@ -1022,6 +1052,14 @@ static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
 static JSValue JS_EvalObject(JSContext *ctx, JSValueConst this_obj,
                              JSValueConst val, int flags, int scope_idx);
 JSValue __attribute__((format(printf, 2, 3))) JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
+
+#ifdef _MSC_VER
+#define __maybe_unused
+#define __exception
+#define no_inline
+#define force_inline
+#endif
+
 static __maybe_unused void JS_DumpAtoms(JSRuntime *rt);
 static __maybe_unused void JS_DumpString(JSRuntime *rt,
                                                   const JSString *p);
@@ -7242,7 +7280,7 @@ static int JS_DefinePrivateField(JSContext *ctx, JSValueConst obj,
         JS_ThrowTypeErrorNotASymbol(ctx);
         goto fail;
     }
-    prop = js_symbol_to_atom(ctx, (JSValue)name);
+    prop = js_symbol_to_atom(ctx, name);
     p = JS_VALUE_GET_OBJ(obj);
     prs = find_own_property(&pr, p, prop);
     if (prs) {
@@ -7273,7 +7311,7 @@ static JSValue JS_GetPrivateField(JSContext *ctx, JSValueConst obj,
     /* safety check */
     if (unlikely(JS_VALUE_GET_TAG(name) != JS_TAG_SYMBOL))
         return JS_ThrowTypeErrorNotASymbol(ctx);
-    prop = js_symbol_to_atom(ctx, (JSValue)name);
+    prop = js_symbol_to_atom(ctx, name);
     p = JS_VALUE_GET_OBJ(obj);
     prs = find_own_property(&pr, p, prop);
     if (!prs) {
@@ -7300,7 +7338,7 @@ static int JS_SetPrivateField(JSContext *ctx, JSValueConst obj,
         JS_ThrowTypeErrorNotASymbol(ctx);
         goto fail;
     }
-    prop = js_symbol_to_atom(ctx, (JSValue)name);
+    prop = js_symbol_to_atom(ctx, name);
     p = JS_VALUE_GET_OBJ(obj);
     prs = find_own_property(&pr, p, prop);
     if (!prs) {
@@ -7390,7 +7428,7 @@ static int JS_CheckBrand(JSContext *ctx, JSValueConst obj, JSValueConst func)
     if (unlikely(JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT))
         goto not_obj;
     p = JS_VALUE_GET_OBJ(obj);
-    prs = find_own_property(&pr, p, js_symbol_to_atom(ctx, (JSValue)brand));
+    prs = find_own_property(&pr, p, js_symbol_to_atom(ctx, brand));
     if (!prs) {
         JS_ThrowTypeError(ctx, "invalid brand on object");
         return -1;
@@ -9042,7 +9080,7 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                 return -1;
             }
             /* this code relies on the fact that Uint32 are never allocated */
-            val = (JSValueConst)JS_NewUint32(ctx, array_length);
+            val = JS_NewUint32(ctx, array_length);
             /* prs may have been modified */
             prs = find_own_property(&pr, p, prop);
             assert(prs != NULL);
@@ -10237,7 +10275,11 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
             } else
 #endif
             {
+#ifdef _MSC_VER
+                double d = INFINITY;
+#else
                 double d = 1.0 / 0.0;
+#endif
                 if (is_neg)
                     d = -d;
                 val = JS_NewFloat64(ctx, d);
@@ -16043,7 +16085,7 @@ static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
 #else
     sf->js_mode = 0;
 #endif
-    sf->cur_func = (JSValue)func_obj;
+    sf->cur_func = func_obj;
     sf->arg_count = argc;
     arg_buf = argv;
 
@@ -16287,7 +16329,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     sf->js_mode = b->js_mode;
     arg_buf = argv;
     sf->arg_count = argc;
-    sf->cur_func = (JSValue)func_obj;
+    sf->cur_func = func_obj;
     init_list_head(&sf->var_ref_list);
     var_refs = p->u.func.var_refs;
 
@@ -39283,8 +39325,8 @@ static int64_t JS_FlattenIntoArray(JSContext *ctx, JSValueConst target,
         if (!JS_IsUndefined(mapperFunction)) {
             JSValueConst args[3] = { element, JS_NewInt64(ctx, sourceIndex), source };
             element = JS_Call(ctx, mapperFunction, thisArg, 3, args);
-            JS_FreeValue(ctx, (JSValue)args[0]);
-            JS_FreeValue(ctx, (JSValue)args[1]);
+            JS_FreeValue(ctx, args[0]);
+            JS_FreeValue(ctx, args[1]);
             if (JS_IsException(element))
                 return -1;
         }
@@ -40701,7 +40743,7 @@ static JSValue js_string_match(JSContext *ctx, JSValueConst this_val,
         str = JS_NewString(ctx, "g");
         if (JS_IsException(str))
             goto fail;
-        args[args_len++] = (JSValueConst)str;
+        args[args_len++] = str;
     }
     rx = JS_CallConstructor(ctx, ctx->regexp_ctor, args_len, args);
     JS_FreeValue(ctx, str);
@@ -41759,7 +41801,11 @@ static JSValue js_math_min_max(JSContext *ctx, JSValueConst this_val,
     uint32_t tag;
 
     if (unlikely(argc == 0)) {
+#ifdef _MSC_VER
+        return __JS_NewFloat64(ctx, is_max ? -INFINITY : INFINITY);
+#else
         return __JS_NewFloat64(ctx, is_max ? -1.0 / 0.0 : 1.0 / 0.0);
+#endif
     }
 
     tag = JS_VALUE_GET_TAG(argv[0]);
@@ -45729,7 +45775,7 @@ static JSMapRecord *map_add_record(JSContext *ctx, JSMapState *s,
     } else {
         JS_DupValue(ctx, key);
     }
-    mr->key = (JSValue)key;
+    mr->key = key;
     h = map_hash_key(ctx, key) & (s->hash_size - 1);
     list_add_tail(&mr->hash_link, &s->hash_table[h]);
     list_add_tail(&mr->link, &s->records);
@@ -45951,7 +45997,7 @@ static JSValue js_map_forEach(JSContext *ctx, JSValueConst this_val,
                 args[0] = args[1];
             else
                 args[0] = JS_DupValue(ctx, mr->value);
-            args[2] = (JSValue)this_val;
+            args[2] = this_val;
             ret = JS_Call(ctx, func, this_arg, 3, (JSValueConst *)args);
             JS_FreeValue(ctx, args[0]);
             if (!magic)
@@ -46929,7 +46975,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
                 goto fail_reject;
             }
             resolve_element_data[0] = JS_NewBool(ctx, FALSE);
-            resolve_element_data[1] = (JSValueConst)JS_NewInt32(ctx, index);
+            resolve_element_data[1] = JS_NewInt32(ctx, index);
             resolve_element_data[2] = values;
             resolve_element_data[3] = resolving_funcs[is_promise_any];
             resolve_element_data[4] = resolve_element_env;
@@ -47288,7 +47334,7 @@ static JSValue js_async_from_sync_iterator_unwrap_func_create(JSContext *ctx,
 {
     JSValueConst func_data[1];
 
-    func_data[0] = (JSValueConst)JS_NewBool(ctx, done);
+    func_data[0] = JS_NewBool(ctx, done);
     return JS_NewCFunctionData(ctx, js_async_from_sync_iterator_unwrap,
                                1, 0, 1, func_data);
 }
@@ -52717,8 +52763,8 @@ static int js_TA_cmp_generic(const void *a, const void *b, void *opaque) {
             psc->exception = 1;
         }
     done:
-        JS_FreeValue(ctx, (JSValue)argv[0]);
-        JS_FreeValue(ctx, (JSValue)argv[1]);
+        JS_FreeValue(ctx, argv[0]);
+        JS_FreeValue(ctx, argv[1]);
     }
     return cmp;
 }
