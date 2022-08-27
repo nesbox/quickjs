@@ -37,7 +37,6 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#include <dlfcn.h>
 #if defined(_WIN32)
 #include <windows.h>
 #include <conio.h>
@@ -454,6 +453,14 @@ typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
                                         const char *module_name);
 
 
+#if defined(_WIN32)
+static JSModuleDef *js_module_loader_so(JSContext *ctx,
+                                        const char *module_name)
+{
+    JS_ThrowReferenceError(ctx, "shared library modules are not supported yet");
+    return NULL;
+}
+#else
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
 {
@@ -502,6 +509,7 @@ static JSModuleDef *js_module_loader_so(JSContext *ctx,
     }
     return m;
 }
+#endif /* !_WIN32 */
 
 int js_module_set_import_meta(JSContext *ctx, JSValueConst func_val,
                               JS_BOOL use_realpath, JS_BOOL is_main)
@@ -561,7 +569,7 @@ JSModuleDef *js_module_loader(JSContext *ctx,
 {
     JSModuleDef *m;
 
-    if (has_suffix(module_name, ".so") || has_suffix(module_name, ".dll")) {
+    if (has_suffix(module_name, ".so")) {
         m = js_module_loader_so(ctx, module_name);
     } else {
         size_t buf_len;
