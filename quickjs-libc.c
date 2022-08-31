@@ -28,10 +28,16 @@
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
+#if defined(_MSC_VER)
+#include <winsock.h>
+#include <sys/utime.h>
+#else
 #include <unistd.h>
+#include <sys/time.h>
+#include <utime.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/time.h>
 #include <time.h>
 #include <signal.h>
 #include <limits.h>
@@ -40,7 +46,6 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <conio.h>
-#include <utime.h>
 #else
 #include <dlfcn.h>
 #include <termios.h>
@@ -65,6 +70,13 @@ typedef sig_t sighandler_t;
 #ifdef USE_WORKER
 #include <pthread.h>
 #include <stdatomic.h>
+#endif
+
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#define pclose(...) _pclose(__VA_ARGS__)
+#define popen(...) _popen(__VA_ARGS__)
 #endif
 
 #include "cutils.h"
@@ -1970,6 +1982,11 @@ static int64_t get_time_ms(void)
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000 + (ts.tv_nsec / 1000000);
 }
+#elif defined(_MSC_VER)
+static int64_t get_time_ms(void)
+{
+    return GetTickCount();
+}
 #else
 /* more portable, but does not work if the date is updated */
 static int64_t get_time_ms(void)
@@ -2567,7 +2584,7 @@ static JSValue js_os_stat(JSContext *ctx, JSValueConst this_val,
     return make_obj_error(ctx, obj, err);
 }
 
-#if !defined(_WIN32)
+#if defined(_MSC_VER) || !defined(_WIN32)
 static void ms_to_timeval(struct timeval *tv, uint64_t v)
 {
     tv->tv_sec = v / 1000;

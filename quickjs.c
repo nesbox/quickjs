@@ -1055,8 +1055,13 @@ JSValue __attribute__((format(printf, 2, 3))) JS_ThrowInternalError(JSContext *c
 
 #ifdef _MSC_VER
 #define __maybe_unused
+
+#undef __exception
 #define __exception
+
 #define no_inline
+
+#undef force_inline
 #define force_inline
 #endif
 
