@@ -80,7 +80,7 @@ static int gettimeofday(struct timeval* tp, struct timezone* tzp)
 
 #define OPTIMIZE         1
 #define SHORT_OPCODES    1
-#if defined(EMSCRIPTEN) || defined(_MSC_VER)
+#if defined(EMSCRIPTEN) || defined(_MSC_VER) || defined(POOR_CLIB)
 #define DIRECT_DISPATCH  0
 #else
 #define DIRECT_DISPATCH  1
@@ -99,15 +99,21 @@ static int gettimeofday(struct timeval* tp, struct timezone* tzp)
 
 /* define to include Atomics.* operations which depend on the OS
    threads */
-#if !defined(EMSCRIPTEN) && !defined(_MSC_VER)
+#if !defined(EMSCRIPTEN) && !defined(_MSC_VER) && !defined(POOR_CLIB)
 #define CONFIG_ATOMICS
 #endif
 
-#if !defined(EMSCRIPTEN) && !defined(_MSC_VER)
+#if !defined(EMSCRIPTEN) && !defined(_MSC_VER) && !defined(POOR_CLIB)
 /* enable stack limitation */
 #define CONFIG_STACK_CHECK
 #endif
 
+#if defined(POOR_CLIB)
+#define FE_DOWNWARD     1 
+#define FE_TONEAREST    0 
+#define FE_TOWARDZERO   3 
+#define FE_UPWARD       2
+#endif
 
 /* dump object free */
 //#define DUMP_FREE
@@ -1723,7 +1729,7 @@ static inline size_t js_def_malloc_usable_size(void *ptr)
     return malloc_size(ptr);
 #elif defined(_WIN32)
     return _msize(ptr);
-#elif defined(EMSCRIPTEN)
+#elif defined(EMSCRIPTEN) || defined(POOR_CLIB)
     return 0;
 #elif defined(__linux__)
     return malloc_usable_size(ptr);
@@ -1797,13 +1803,13 @@ static const JSMallocFunctions def_malloc_funcs = {
     malloc_size,
 #elif defined(_WIN32)
     (size_t (*)(const void *))_msize,
-#elif defined(EMSCRIPTEN)
+#elif defined(EMSCRIPTEN) || defined(POOR_CLIB)
     NULL,
 #elif defined(__linux__)
     (size_t (*)(const void *))malloc_usable_size,
 #else
     /* change this to `NULL,` if compilation fails */
-    NULL,
+    malloc_usable_size,
 #endif
 };
 
@@ -42064,7 +42070,7 @@ static JSValue js___date_clock(JSContext *ctx, JSValueConst this_val,
 /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
    between UTC time and local time 'd' in minutes */
 static int getTimezoneOffset(int64_t time) {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(POOR_CLIB)
     /* XXX: TODO */
     return 0;
 #else
