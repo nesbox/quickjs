@@ -28,7 +28,11 @@
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
+
+#if !defined(_MSC_VER)
 #include <unistd.h>
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>

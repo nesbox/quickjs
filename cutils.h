@@ -29,11 +29,28 @@
 #include <string.h>
 #include <inttypes.h>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
+/* set if CPU is big endian */
+#undef WORDS_BIGENDIAN
+
+#if defined(__GNUC__) || defined(__clang__)
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define force_inline inline __attribute__((always_inline))
 #define no_inline __attribute__((noinline))
 #define __maybe_unused __attribute__((unused))
+#else
+#define likely(x)       (x)
+#define unlikely(x)     (x)
+#define force_inline inline
+#define no_inline
+#define __maybe_unused
+#define __attribute__(x)
+#define __attribute(x)
+#endif
 
 #define xglue(x, y) x ## y
 #define glue(x, y) xglue(x, y)
@@ -128,25 +145,49 @@ static inline int64_t min_int64(int64_t a, int64_t b)
 /* WARNING: undefined if a = 0 */
 static inline int clz32(unsigned int a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+    _BitScanReverse(&idx, a);
+    return 31 ^ idx;
+#else
     return __builtin_clz(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int clz64(uint64_t a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+    _BitScanReverse64(&idx, a);
+    return 63 ^ idx;
+#else
     return __builtin_clzll(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int ctz32(unsigned int a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+    _BitScanForward(&idx, a);
+    return 31 ^ idx;
+#else
     return __builtin_ctz(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int ctz64(uint64_t a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+    _BitScanForward64(&idx, a);
+    return 63 ^ idx;
+#else
     return __builtin_ctzll(a);
+#endif
 }
 
 struct __attribute__((packed)) packed_u64 {
